@@ -9,6 +9,7 @@ from stock_predictor import *
 from tensorflow.keras.models import load_model
 import os
 import requests
+import re
 
 # 🧠 Page setup
 st.set_page_config(
@@ -59,7 +60,7 @@ st.markdown("""
 
 # 🧭 Sidebar
 st.sidebar.header("⚙️ Controls")
-ticker = st.sidebar.text_input("Enter Stock Symbol", "AAPL")
+ticker = st.sidebar.text_input("Enter Stock Symbol", "AAPL").upper().strip()
 period = st.sidebar.selectbox("Select Period", ["1y", "2y", "5y", "10y"], index=2)
 run_prediction = st.sidebar.button("🔮 Run Prediction")
 
@@ -71,11 +72,16 @@ st.markdown("---")
 today = date.today()
 st.write(f"**Date:** {today.strftime('%B %d, %Y')}")
 
-# 📈 Fetch stock info
+# 🔍 Validate ticker first
 try:
     stock = yf.Ticker(ticker)
     info = stock.info
 
+    if "longName" not in info or info.get("regularMarketPrice") is None:
+        st.error(f"⚠️ '{ticker}' is not a valid stock symbol. Please enter a valid one like AAPL, TSLA, MSFT, RELIANCE.NS, or TCS.NS.")
+        st.stop()
+
+    # ✅ Fetch stock info
     logo_url = info.get("logo_url", "")
     long_name = info.get("longName", ticker)
     market_price = info.get("regularMarketPrice", 0)
@@ -84,13 +90,13 @@ try:
     pe_ratio = info.get("trailingPE", None)
     volume = info.get("volume", 0)
 
-    # 🧩 Header info with logo
+    # 🧩 Header info
     col1, col2 = st.columns([1, 4])
     with col1:
         if logo_url:
             st.image(logo_url, width=90)
     with col2:
-        st.subheader(f"{long_name} ({ticker.upper()})")
+        st.subheader(f"{long_name} ({ticker})")
         st.write(f"💰 **Market Price:** ${market_price}")
         st.write(f"🏢 **Market Cap:** ${market_cap:,}")
         if pe_ratio:
@@ -99,8 +105,9 @@ try:
 
     st.markdown("---")
 
-except Exception as e:
-    st.warning("⚠️ Unable to fetch stock data. Please check the symbol.")
+except Exception:
+    st.error("⚠️ Unable to fetch company details. Please check your symbol or internet connection.")
+    st.stop()
 
 # 🧩 Run Prediction
 if run_prediction:
@@ -108,21 +115,31 @@ if run_prediction:
 
     with st.spinner("Downloading data & training model..."):
         df = yf.download(ticker, period=period)
-        df = df[['Close']]
-        st.subheader("📈 Historical Close Prices")
-        st.line_chart(df['Close'])
 
-        scaler, train_data, test_data, x_train, y_train = prepare_data(df)
-
-        if os.path.exists("lstm_model.keras"):
-            model = load_model("lstm_model.keras")
+        # 🧠 Safety check
+        if df.empty or "Close" not in df.columns:
+            st.error("⚠️ No valid stock data found. Please try another symbol (e.g. AAPL, MSFT, RELIANCE.NS).")
+            st.stop()
         else:
-            model = train_model(x_train, y_train)
-            model.save("lstm_model.keras")
+            df = df[['Close']]
+            st.subheader("📈 Historical Close Prices")
+            st.line_chart(df['Close'])
 
-        predicted_price = predict_future(model, test_data, scaler)
-        last_price = df['Close'][-1]
-        change = ((predicted_price - last_price) / last_price) * 100
+            scaler, train_data, test_data, x_train, y_train = prepare_data(df)
+
+            if os.path.exists("lstm_model.keras"):
+                model = load_model("lstm_model.keras")
+            else:
+                model = train_model(x_train, y_train)
+                model.save("lstm_model.keras")
+
+            if len(df['Close']) > 0:
+                last_price = df['Close'].iloc[-1]
+                predicted_price = predict_future(model, test_data, scaler)
+                change = ((predicted_price - last_price) / last_price) * 100
+            else:
+                st.error("⚠️ Could not compute prediction due to missing data.")
+                st.stop()
 
     st.success("✅ Prediction Complete!")
 
@@ -152,20 +169,22 @@ if run_prediction:
     ax.legend()
     st.pyplot(fig)
 
-# 📰 Stock News Section
+# 📰 Stock News
 st.subheader("🗞️ Latest News")
 try:
     url = f"https://finance.yahoo.com/quote/{ticker}?p={ticker}"
     response = requests.get(url)
     if response.status_code == 200:
-        import re
         titles = re.findall(r'"title":"(.*?)"', response.text)
         unique_titles = list(dict.fromkeys(titles))[:5]
-        for t in unique_titles:
-            st.markdown(f"<div class='news-card'>📰 {t}</div>", unsafe_allow_html=True)
+        if unique_titles:
+            for t in unique_titles:
+                st.markdown(f"<div class='news-card'>📰 {t}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("No news found.")
     else:
-        st.warning("No news found.")
+        st.warning("No recent news available.")
 except:
     st.warning("⚠️ Could not fetch news at this time.")
 
-st.markdown("<div class='footer'>Made with ❤️ using Streamlit, TensorFlow & Yahoo Finance API</div>", unsafe_allow_html=True)
+st.markdown("<div class='footer'>Made with using Streamlit, TensorFlow & Yahoo Finance API</div>", unsafe_allow_html=True)
