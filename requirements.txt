@@ -6,3 +6,6 @@ matplotlib
 scikit-learn
 tensorflow
 requests
+nltk
+ta
+plotly
