@@ -111,7 +111,7 @@ def plot_price_with_indicators(df: pd.DataFrame, symbol: str):
     if df.empty or "Close" not in df.columns:
         st.warning("No price data to chart.")
         return
-    fig = make_subplots(rows=2, cols=1, shared_xaxis=True, row_heights=[0.7, 0.3])
+    fig = make_subplots(rows=2, cols=1, shared_xaxis=True, vertical_spacing=0.05)
     # Candles
     if {"Open","High","Low","Close"}.issubset(df.columns):
         fig.add_trace(go.Candlestick(
