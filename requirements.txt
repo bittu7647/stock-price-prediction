@@ -8,4 +8,3 @@ tensorflow
 requests
 nltk
 ta
-plotly
